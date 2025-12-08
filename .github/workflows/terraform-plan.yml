@@ -1,12 +1,11 @@
-
 # REGIONAL-TERRAFORM/.github/workflows/deploy-global.yml
 
 name: Global Terraform CI/CD (Plan and Approve)
 
 on:
-  push:
-    branches:
-      - main # Triggers the Plan job on push to main branch
+  #push:
+  #branches:
+  #- main # Triggers the Plan job on push to main branch
   workflow_dispatch:
 
 env:
@@ -17,7 +16,7 @@ jobs:
   # Job 1: Executes Terraform Plan and uploads the plan file
   plan:
     runs-on: ubuntu-latest
-    
+
     # Use output to pass variables to subsequent jobs, like the plan file path
     outputs:
       plan_file_name: ${{ steps.plan.outputs.plan_file_name }}
@@ -46,7 +45,7 @@ jobs:
         run: |
           # The plan file is named based on the run ID for uniqueness
           PLAN_FILE="plan-${{ github.run_id }}.tfout"
-          
+
           # Create the plan and output it to a file
           terraform plan -no-color -out=${PLAN_FILE} \
             -var="example_api_key_value=${{ secrets.MY_SERVICE_API_KEY }}" \
@@ -65,14 +64,14 @@ jobs:
   # Job 2: Executes Terraform Apply after manual approval
   apply:
     runs-on: ubuntu-latest
-    
+
     # CRITICAL: This line forces the job to wait for the 'plan' job to complete
-    needs: [plan] 
-    
+    needs: [plan]
+
     # CRITICAL: This line ties the job to the GitHub Environment, triggering the approval gate
-    environment: 
-      name: production 
-    
+    environment:
+      name: production
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

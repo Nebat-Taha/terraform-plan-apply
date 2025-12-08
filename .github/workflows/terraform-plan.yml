@@ -8,6 +8,10 @@ on:
   #- main # Triggers the Plan job on push to main branch
   workflow_dispatch:
 
+permissions: # Apply least-privilege permissions at the workflow level
+  contents: read # Required to checkout the code
+  id-token: write # Required for aws-actions/configure-aws-credentials with OIDC
+
 env:
   TF_LOG: INFO
   TF_WORKING_DIR: terraform/global
@@ -56,7 +60,7 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Upload Terraform Plan Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.plan.outputs.plan_file_name }}
           path: ${{ env.TF_WORKING_DIR }}/${{ steps.plan.outputs.plan_file_name }}
@@ -87,7 +91,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Download Terraform Plan Artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ${{ needs.plan.outputs.plan_file_name }}
           path: ${{ env.TF_WORKING_DIR }} # Download the plan file back into the working directory

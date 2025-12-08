@@ -1,1 +1,104 @@
 
+# REGIONAL-TERRAFORM/.github/workflows/deploy-global.yml
+
+name: Global Terraform CI/CD (Plan and Approve)
+
+on:
+  push:
+    branches:
+      - main # Triggers the Plan job on push to main branch
+  workflow_dispatch:
+
+env:
+  TF_LOG: INFO
+  TF_WORKING_DIR: terraform/global
+
+jobs:
+  # Job 1: Executes Terraform Plan and uploads the plan file
+  plan:
+    runs-on: ubuntu-latest
+    
+    # Use output to pass variables to subsequent jobs, like the plan file path
+    outputs:
+      plan_file_name: ${{ steps.plan.outputs.plan_file_name }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # (Steps for AWS Credentials and Terraform Setup are the same as before)
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          # The plan file is named based on the run ID for uniqueness
+          PLAN_FILE="plan-${{ github.run_id }}.tfout"
+          
+          # Create the plan and output it to a file
+          terraform plan -no-color -out=${PLAN_FILE} \
+            -var="example_api_key_value=${{ secrets.MY_SERVICE_API_KEY }}" \
+            -var="rotation_lambda_arn=${{ secrets.MY_ROTATION_LAMBDA_ARN }}" 
+            # Include all variables used in your 'apply' command!
+            
+          echo "plan_file_name=$PLAN_FILE" >> "$GITHUB_OUTPUT"
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Upload Terraform Plan Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.plan.outputs.plan_file_name }}
+          path: ${{ env.TF_WORKING_DIR }}/${{ steps.plan.outputs.plan_file_name }}
+
+  # Job 2: Executes Terraform Apply after manual approval
+  apply:
+    runs-on: ubuntu-latest
+    
+    # CRITICAL: This line forces the job to wait for the 'plan' job to complete
+    needs: [plan] 
+    
+    # CRITICAL: This line ties the job to the GitHub Environment, triggering the approval gate
+    environment: 
+      name: production 
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Download Terraform Plan Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ needs.plan.outputs.plan_file_name }}
+          path: ${{ env.TF_WORKING_DIR }} # Download the plan file back into the working directory
+
+      - name: Terraform Init (Again)
+        # Init must be run again to set up the runner environment
+        run: terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve ${{ needs.plan.outputs.plan_file_name }}
+        # Note: We pass the plan file, so we do NOT need to pass -var flags here.
+        working-directory: ${{ env.TF_WORKING_DIR }}

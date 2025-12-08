@@ -16,23 +16,6 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# Create the Secret Manager resource AND populate it with the initial value
-module "my_example_api_key" {
-  source             = "../modules/secretsmanager"
-  secret_name        = "${var.environment}-MyApiKey"
-  secret_description = "API Key for My App. Value populated via CI/CD."
-  environment        = var.environment
-  secret_value       = var.example_api_key_value # Pass the sensitive value here
-}
-
-#Create a second API Key with a dummy initial value for manual management
-module "my_manual_api_key" {
-  source             = "../modules/secretsmanager"
-  secret_name        = "${var.environment}-MyManualApiKey"
-  secret_description = "API Key for a service, value managed manually via CLI/Console."
-  environment        = var.environment
-  secret_value       = "dummy-initial-value-for-manual-update" # Provide a dummy string
-}
 
 # Instantiate the IAM Policy module to create the EC2 Instance Connect Policy
 module "ec2_instance_connect_policy" {
@@ -100,17 +83,7 @@ module "dev_user" {
   ]
 }
 
-# outpts for api_key 
-# This output is only for demonstration. Do not output sensitive data in a real project.
-output "example_api_key_secret_arn" {
-  value       = module.my_example_api_key.secret_arn
-  description = "The ARN of the example API key secret."
-}
-# Output for the  API_key with a dummy initial value
-output "manual_api_key_secret_arn" {
-  value       = module.my_manual_api_key.secret_arn
-  description = "The ARN of the manually managed API key secret."
-}
+
 
 # Outputs for user credentials.
 # These are marked sensitive and should be handled with extreme care!

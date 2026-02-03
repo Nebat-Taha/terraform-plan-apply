@@ -1,107 +1,92 @@
-# REGIONAL-TERRAFORM/.github/workflows/deploy-global.yml
-
-name: Global Terraform CI/CD (Plan and Approve)
+name: Multi-Region Terraform Deployment
 
 on:
-  #push:
-  #branches:
-  #- main # Triggers the Plan job on push to main branch
   workflow_dispatch:
+  # push:
+  #   branches: [ main ]
+  #   paths: ['terraform/regions/**', 'terraform/modules/**']
 
-permissions: # Apply least-privilege permissions at the workflow level
-  contents: read # Required to checkout the code
-  id-token: write # Required for aws-actions/configure-aws-credentials with OIDC
-
-env:
-  TF_LOG: INFO
-  TF_WORKING_DIR: terraform/global
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
-  # Job 1: Executes Terraform Plan and uploads the plan file
-  plan:
+  # --- JOB 1: PLAN ---
+  terraform_plan:
+    name: "Plan: ${{ matrix.region }}"
     runs-on: ubuntu-latest
-
-    # Use output to pass variables to subsequent jobs, like the plan file path
-    outputs:
-      plan_file_name: ${{ steps.plan.outputs.plan_file_name }}
+    strategy:
+      fail-fast: false # Don't cancel other regions if one fails
+      matrix:
+        region: [us-east-1, ap-southeast-2, eu-central-1]
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
-
-      # (Steps for AWS Credentials and Terraform Setup are the same as before)
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.1
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ matrix.region }}
 
       - name: Terraform Init
-        run: terraform init
-        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -reconfigure
+        working-directory: ./terraform/regions/${{ matrix.region }}
 
       - name: Terraform Plan
-        id: plan
-        run: |
-          # The plan file is named based on the run ID for uniqueness
-          PLAN_FILE="plan-${{ github.run_id }}.tfout"
+        # We save the plan to a file called 'tfplan'
+        run: terraform plan -input=false -out=tfplan
+        working-directory: ./terraform/regions/${{ matrix.region }}
 
-          # Create the plan and output it to a file
-          terraform plan -no-color -out=${PLAN_FILE} \
-            -var="example_api_key_value=${{ secrets.MY_SERVICE_API_KEY }}" \
-            -var="rotation_lambda_arn=${{ secrets.MY_ROTATION_LAMBDA_ARN }}" 
-            # Include all variables used in your 'apply' command!
-            
-          echo "plan_file_name=$PLAN_FILE" >> "$GITHUB_OUTPUT"
-        working-directory: ${{ env.TF_WORKING_DIR }}
-
-      - name: Upload Terraform Plan Artifact
+      - name: Upload Plan Artifact
+        # We give it a unique name so regions don't overwrite each other
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.plan.outputs.plan_file_name }}
-          path: ${{ env.TF_WORKING_DIR }}/${{ steps.plan.outputs.plan_file_name }}
+          name: tfplan-${{ matrix.region }}
+          path: terraform/regions/${{ matrix.region }}/tfplan
 
-  # Job 2: Executes Terraform Apply after manual approval
-  apply:
+  # --- JOB 2: APPLY ---
+  terraform_apply:
+    name: "Apply: ${{ matrix.region }}"
+    needs: terraform_plan
     runs-on: ubuntu-latest
-
-    # CRITICAL: This line forces the job to wait for the 'plan' job to complete
-    needs: [plan]
-
-    # CRITICAL: This line ties the job to the GitHub Environment, triggering the approval gate
-    environment:
-      name: production
+    environment: production # <--- THIS IS THE HUMAN GATE
+    strategy:
+      matrix:
+        region: [us-east-1, ap-southeast-2, eu-central-1]
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Download Terraform Plan Artifact
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          aws-region: ${{ matrix.region }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Download Plan Artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.plan.outputs.plan_file_name }}
-          path: ${{ env.TF_WORKING_DIR }} # Download the plan file back into the working directory
+          name: tfplan-${{ matrix.region }}
+          path: terraform/regions/${{ matrix.region }}/
 
-      - name: Terraform Init (Again)
-        # Init must be run again to set up the runner environment
-        run: terraform init
-        working-directory: ${{ env.TF_WORKING_DIR }}
+      - name: Terraform Init
+        run: terraform init -reconfigure
+        working-directory: ./terraform/regions/${{ matrix.region }}
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve ${{ needs.plan.outputs.plan_file_name }}
-        # Note: We pass the plan file, so we do NOT need to pass -var flags here.
-        working-directory: ${{ env.TF_WORKING_DIR }}
+        # Apply using the EXACT plan file we generated in Job 1
+        run: terraform apply -auto-approve tfplan
+        working-directory: ./terraform/regions/${{ matrix.region }}

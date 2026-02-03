@@ -49,6 +49,12 @@ jobs:
         run: terraform show -no-color tfplan > plan_readable.txt
         working-directory: ./terraform/regions/${{ matrix.region }}
 
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p staging
+          cp terraform/regions/${{ matrix.region }}/tfplan staging/
+          cp terraform/regions/${{ matrix.region }}/plan_readable.txt staging/
+
       - name: Upload Plan Artifact
         # We give it a unique name so regions don't overwrite each other
         uses: actions/upload-artifact@v4

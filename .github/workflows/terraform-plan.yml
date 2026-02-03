@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false # Don't cancel other regions if one fails
       matrix:
-        region: [us-east-1, ap-southeast-2, eu-central-1]
+        region: [us-east-1]
 
     steps:
       - name: Checkout code
@@ -43,6 +43,10 @@ jobs:
       - name: Terraform Plan
         # We save the plan to a file called 'tfplan'
         run: terraform plan -input=false -out=tfplan
+        working-directory: ./terraform/regions/${{ matrix.region }}
+
+      - name: Create Human Readable Plan
+        run: terraform show -no-color tfplan > plan_readable.txt
         working-directory: ./terraform/regions/${{ matrix.region }}
 
       - name: Upload Plan Artifact

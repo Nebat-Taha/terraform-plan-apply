@@ -7,3 +7,9 @@ variable "environment" {
   type        = string
   description = "Deployment environment"
 }
+
+variable "ssh_public_key" {
+  description = "The actual string starting with ssh-rsa ..."
+  type        = string
+  sensitive   = true
+}

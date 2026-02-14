@@ -23,22 +23,28 @@ module "ec2_instance_connect_policy" {
   policy_name        = "${var.environment}-EC2InstanceConnectAccess"
   policy_description = "Grants permissions for EC2 Instance Connect"
   environment        = var.environment
+
   statements = [
     {
-      sid       = "EC2InstanceConnectSSH"
-      actions   = ["ec2-instance-connect:SendSSHPublicKey"]
-      resources = ["arn:aws:ec2:${var.region}:*:instance/*"] # Scope to instances in us-east-1 for now, or use "*" for all regions
-      # If you want to restrict to specific instances later:
-      # resources = ["arn:aws:ec2:${var.region}:<account_id>:instance/<instance_id>"]
+      sid     = "EC2InstanceConnectSSH"
+      actions = ["ec2-instance-connect:SendSSHPublicKey"]
+      # Use * for region if you want this one policy to cover all 3 locations
+      resources = ["arn:aws:ec2:*:*:instance/*"]
+      conditions = [
+        {
+          test     = "StringEquals"
+          variable = "ec2:osuser"
+          values   = ["ec2-user"]
+        }
+      ]
     },
     {
       sid       = "EC2DescribeInstances"
       actions   = ["ec2:DescribeInstances"]
-      resources = ["*"] # ec2:DescribeInstances is a read-only permission and doesn't support resource-level permissions often.
+      resources = ["*"]
     }
   ]
 }
-
 # Instantiate the IAM Policy module to create the S3/SQS List Access Policy.
 # Source path is relative from 'terraform/global/' to 'terraform/modules/iam_policy/'.
 module "s3_sqs_list_policy" {

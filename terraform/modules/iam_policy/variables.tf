@@ -1,16 +1,18 @@
 variable "policy_name" {
-  description = "The name of the IAM policy."
-  type        = string
+  type = string
 }
 
 variable "policy_description" {
-  description = "The description of the IAM policy."
-  type        = string
-  default     = "Managed by Terraform"
+  type    = string
+  default = "Managed by Terraform"
+}
+
+variable "environment" {
+  type = string
 }
 
 variable "statements" {
-  description = "A list of policy statements to include in the policy document."
+  description = "List of policy statements"
   type = list(object({
     sid       = optional(string)
     actions   = list(string)
@@ -20,13 +22,11 @@ variable "statements" {
       type        = string
       identifiers = list(string)
     })), [])
-    # REMOVED the 'conditions' block from here for now, as it caused the error
-    # and is not currently used in your S3/SQS policy.
-    # If you need to add conditions later, we will revisit their specific type definition.
+    # Re-added conditions as an optional list of objects
+    conditions = optional(list(object({
+      test     = string
+      variable = string
+      values   = list(string)
+    })), [])
   }))
-}
-
-variable "environment" {
-  description = "The environment name for tagging the IAM policy."
-  type        = string
 }

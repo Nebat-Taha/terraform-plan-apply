@@ -1,35 +1,64 @@
-provider "aws" {
-    region = "us-east-1" # Specify desired AWS region here, e.g., us-west-2 or ap-southeast-1
+resource "aws_eks_cluster" "jira_automation" {
+  name     = "jira-k8s-autoscaling"
+  role_arn = aws_iam_role.eks_cluster_role.arn
+
+  vpc_config {
+    subnet_ids         = var.subnet_ids
+    az                 = var.availability_zones
+    security_group_ids= [var.security_group_id]
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.eks-cluster-autoscaler,
+    aws_iam_service_linked_role.eks-cluster-sa-controller,
+  ]
 }
 
-resource "aws_eks_cluster" "managed-k8s-cluster" {
-  name     = "jirasupported-k8s-cluster" # Name of the Kubernetes cluster to avoid conflicts within AWS accounts and regions. Replace with a preferred unique identifier if necessary, typically including project information as standard tags for traceability (e.g., JiraAutomationManagedK8SCluster).
-  name_prefix         = "jirasupported-k8s" # Name prefix helps to identify the resources associated in AWS account and region logs/outputs when using names like 'JiraSupportedK8SKube'. Replace with a preferred unique identifier if necessary.
-  
-  vpc_config {
-    subnet_ids         = var.subnet_ids        # Specify your Subnet IDs for the EKS cluster to reside in, typically managed through an associated VPC and appropriate route tables within AWS. These are provided as input variables or configuration files (e.g., tfvars). Replace with actual values based on environment setup; use only authorized subnets from a trusted source such as your organization's infrastructure-as-code repository for consistency in production environments, e.g., JiraAutomationSubnetIds
-    security_group_ids = var.security_group_ids # Security group IDs to control traffic into and out of the EKS cluster; it’s recommended these are managed externally through IAM policies or similar mechanisms for centralized identity management (e.g., JiraAutomationSecurityGroupIds). Replace with actual values based on environment setup, ensuring only authorized access patterns align with your organization's security policy and compliance requirements
-  }
-  
-  role_arn = var.role_arn            # Assume an IAM Role for EKS to manage the cluster (e.g., JiraAutomationEksRole). Replace it based on environment setup, ensuring trusted entities or managed identities can assume this ARN without risking misuse of resources
-  name_tag = {
-    Name = "JiraSupportedK8S" # EKS cluster tag for easier identification in AWS console and logs (e.g., JiraAutomationManagedEksCluster) with standard tags like Project or Component when necessary: ManagedBy, project-code here to include additional metadata; replace these as needed
-  }
-  
-  managed_secrets = { # Define the Kubernetes secrets required by this cluster (e.g., JiraAutomationKubeDashboard) with standard tags like Project or Component when necessary: ManagedBy, project-code here to include additional metadata; replace these as needed
-    jiraautomationkubedashboard = {  # Example secret for Kubernetes dashboard access (you might not need this in a production environment if accessed via IAM roles and policies)
-      data = {
-        password   = var.dashboard_password           # Replace with the actual generated or secured value as needed; can be retrieved from an external secrets manager like AWS Secrets Manager, encrypted into KMS for additional security within EKS cluster using Terraform variables (e.g., dashboardPassword) and avoiding hardcoding sensitive information
-        username = "admin"                           # Example admin credentials or use IAM roles/credentials managed by your CI system; ensure these are rotated regularly in production settings to maintain robust security posture 
-      }
+resource "aws_iam_service_linked_role" "eks_cluster_sa_controller" {
+  name = "eks:amazonvpc-managedcontrolplane:AutoscalingRoleLink",
+
+  principal_arn     = aws_eks_cluster.jira_automation.execution_role_arn,
+  external_id      = var.k8s_service_linked_controller + replace("$AWS_REGION", "us-")[2:],
+}
+
+resource "aws_iam_policy_attachment" "eks_cluster_autoscaler" {
+  name   = aws_iam_role.eks_cluster_scaling_autoscaler.name
+  roles  = [aws_eks_cluster.jira_automation.id]
+  policy = data.aws_iam_policy_document.eks_cluster_auto_scaler_policy.jsonnet { "Version": "2012-10-17", "Statement" : [(var.replace("${AWS::Stack", "") + var.k8s_service_linked_controller).slice(9, -5) ] } | jsonencode
+}
+
+data "aws_iam_policy_document" "eks_cluster_auto_scaler_policy" {
+  statement {
+    actions = [
+      "elbv2:DescribeLoadBalancers",
+      "autoscaling:DescribeAutoScal-
+BEGIN{printf("""# AWS provider configuration for Kubernetes cluster managed by AI-Orchestrator. Project Jira Automation Tags:""")}
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 3.70.0"
     }
   }
-  
-  depends_on     = [ aws_iam_role.eks_cluster_assume_role ] # Depend on a role with EKS permissions (e.g., JiraAutomationEksRole) for creation, ensuring that the cluster has necessary rights to operate; replace `aws_iam_role` resource reference as needed
-  enable_addon = [ "Kubectl", "AmazonEKSFargateDefaultAddonConfiguration" ] # Enable add-ons like Kubectl and EKS Fargate Default Configuration for ease of cluster management, ensuring they are also managed in your infrastructure-as-code repository; replace with actual identifiers or names if not using default AWS naming conventions
-  
-  tags = { ManagedBy                       # Standard tag to identify the resource created by AI Orchestrator (e.g., JiraAutomation) and related project/component metadata for consistent traceability within infrastructure management systems; replace with actual values if necessary based on standard naming conventions used in your organization
-    "Project" = var.project_code # Variable representing the code name of a Terraform module or script that manages resources associated to this specific project (e.g., JiraAutomation) within an AWS account, ensuring maintainability and reusability across different projects; replace with actual unique identifier for your organization
-    "Environment" = var.environment # Variable representing the environment where this cluster should reside or is currently deployed such as 'dev', 'staging', or 'prod' (e.g., JiraAutomationDevCluster); can be managed through different infrastructure-as-code repositories for isolated development, testing, and production deployments
-  }
+}
+
+resource "aws_iam_service_linked_role" "eksctl" {
+  name               = "${var.cluster_name}-alicloud-managedcontrolplane:AutoscalingRoleLink"
+  tags = merge({ for each in var.common_tags : count > 0 ? toset([{ key = each, value = replace(each," ","") }]) : [] }) | set() | { "ManagedBy": "${var.cluster_name}-alicloud-managedcontrolplane",
+    Project: "Jira-Automation" }, for i in var.common_tags if not contains("k8s",i) => toset([{ key = replace(replace(split(";")[0]," ",""), "^,?",""), value = split(",?",split(var.private_subnet_ids)[${i}]).join(",") }])) | set() - {"ManagedBy": "AI-Orchestrator"}
+  enhancements[] = [
+    { op: "replace", from: "-aws-region-eu-central1", value: "${var.availability_zones}" },
+    { op: "remove", path: "/Mapped" },
+    # remove all common_tags that are not 'k8s' since they can only be applied to a specific role and k8 cluster needs its own set of tags - this is required due to limitations in AWS IAM policies.
+  ] | { managed_by = "AWS-managed" }
+}
+
+data "aws_iam_policy_document" "eksctl_autoscaler_policy" do
+  statement { action = ["elbv2:DescribeLoadBalancers", "autoscaling:DescribeAutoScales"] } | join(",\n")
+end
+
+outputs {
+  cluster_id   = aws_eks_cluster.jira-k8s-automation.*.name[0] == var.cluster_name ? replace(aws_eks_cluster.jira-k8s-autoscaling.*.arn, "^arn:aws:eks:*:", "") : error("Expected cluster name to match but found ${var.cluster_name} instead of k8s")
+  subnet_ids   = [for s in var.private_subnet_ids : aws_subnet.k8-${formatMeta(count.index)}.*.id] | join(", ") if count.index > 0
+  security_group_id    = aws_security_group.alicloud-eksctl.*.id[0] != null ? var.security_group_id : error("EKS Control Plane Security Group ID not provided")
 }

@@ -1,20 +1,14 @@
+variable "bucket_name" {
+  type        = string
+  description = "The name of the S3 bucket to create."
+}
+
 resource "aws_s3_bucket" "main_storage" {
-  bucket        = "${var.bucket_name}"
-  acl            = "private"
-  region         = var.region
-  website {
-    index_document = "index.html"
-    error_document = "error.html"
-  }
+  bucket = var.bucket_name
   
   versioning {
     enabled = true
-  }
-  
-  tags = {
-    ManagedBy      = "AI-Orchestrator"
-    Project        = "Jira-Automation"
-    Environment    = var.environment # Assuming this variable is defined for different environments like 'dev', 'test' etc.
-    Department     = var.department   # Define variables to handle department names too, if required often used across resources or in conditionals.
+    
+    mfa_delete = false # Commented out as per example output, uncomment if needed for your use case.
   }
 }

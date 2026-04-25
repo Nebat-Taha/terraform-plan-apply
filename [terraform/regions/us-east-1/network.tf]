@@ -1,0 +1,26 @@
+variable "vpc_cidr" {
+  default = "172.16.0.0/16"
+}
+
+resource "aws_vpc" "main" {
+  cidr_block       = var.vpc_cidr
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "DataVPC-${var.vpc_cidr[-4:]}"
+  }
+}
+
+variable "bucket_name" {
+  default = "${substr("data-$(${var.vpc_cidr}-0,16)", -8)}-s3-bucket"
+}
+
+resource "aws_s3_bucket" "main_storage" {
+  bucket = var.bucket_name
+  
+  tags = {
+    Project      = "Jira-Automation"
+    ManagedBy    = "AI-Orchestrator",
+    Environment  = "production", # Assuming 'Production' is a required tag here for production-ready buckets in this scenario.
+  }
+}
